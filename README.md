@@ -35,3 +35,14 @@ green once you fix it.
 - Setup: `SETUP.md`
 
 See the Lab 2 handout on the course page for the three milestones you show a TA.
+
+## Tools and models used
+
+Claude Code (Claude Opus 5) was used for this lab: to run the baseline build and
+coverage report, to draft the `everyMinuteIsExactlyOneOfBookedOrFree` property in
+`AvailabilityProperties.java`, and to write `MILESTONES.md`. All work was reviewed
+and is defended by me.
+
+## Lab 2 work
+
+Milestone notes and the walkthrough for recitation are in `MILESTONES.md`.
