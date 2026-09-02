@@ -5,8 +5,8 @@ Working notes and the script for recitation. Fork: <https://github.com/EtixP/f26
 | Milestone | Status |
 | --- | --- |
 | 1 — Specify the invariant as a property | **Done** (pushed on its own, CI red) |
-| 2 — Fix the bug | Not started |
-| 3 — Audit the generated suite | Not started |
+| 2 — Fix the bug | **Done** (CI green) |
+| 3 — Audit the generated suite | **Done** (written up in `README.md`) |
 
 ## Setup
 
@@ -94,28 +94,74 @@ I get back everything that should be there?"
 - Local failing run: the `mvn test` output showing `Shrunk Sample` (screenshot / saved output).
 - CI: the red run on the Actions tab for commit `1cdae05`.
 
-## Milestone 2 — fix the bug (not started)
+## Milestone 2 — the fix
 
-Diagnosis is already in hand from the property's counterexample. In
-`src/main/java/edu/cmu/cs214/availability/AvailabilityCalculator.java` (lines 32–38),
-the loop emits the gap *before* each booking and advances `cursor` past it, then returns
-straight away. It never emits the final gap `[cursor, dayEnd)`. So free time after the
-last booking ends is dropped, and an empty booking list produces an empty result instead
-of the whole day.
+`src/main/java/edu/cmu/cs214/availability/AvailabilityCalculator.java`. The loop emitted
+the gap *before* each booking and advanced `cursor` past it, then returned immediately. It
+never emitted the final gap `[cursor, dayEnd)`. Three lines added:
 
-Every one of the six generated examples that could have caught this happens to end its
-last booking exactly at `DAY_END`, which is why the tail was never missing in practice.
+```java
+if (cursor < dayEnd) {
+    free.add(new TimeInterval(cursor, dayEnd));
+}
+```
 
-Remaining: make the fix, get `mvn test` green locally, push, and show the red and green
-runs side by side on the Actions tab. Do not weaken the property.
+The `cursor < dayEnd` guard is load-bearing, not decoration: `TimeInterval`'s constructor
+throws on `start >= end`, so emitting the tail unconditionally would turn the bug into an
+exception on any fully-booked or degenerate day.
 
-## Milestone 3 — audit the generated suite (not started)
+**One-sentence summary for the TA:** `freeSlots` never emitted the free gap between the
+end of the last booking and the end of the business day, so all free time after the last
+meeting was silently dropped — and a day with no bookings came back with no free time at
+all.
 
-Remaining: name three concrete weaknesses in `AvailabilityCalculatorTest`, each
-classified as a **controllability** gap (never drove the input that would expose the bug)
-or an **observability** gap (ran the buggy code but the assertions could not see the
-wrong result), and write them up in the README along with why 100% coverage did not save
-the suite.
+The property was not touched. The fix is in the code.
+
+### Verification
+
+- `mvn test`: **8 tests, 0 failures, BUILD SUCCESS** (6 examples + 2 properties).
+- Re-ran both properties at `-Djqwik.tries.default=20000`: 20,000 checks each, green.
+- Spot-checked the counterexamples and edge cases directly:
+
+  | Input | Returns |
+  | --- | --- |
+  | day `[0,1)`, no bookings *(the shrunk sample)* | `[[0,1)]` |
+  | day `[40,1384)`, last booking ends 645 *(original sample)* | `[[244,278), [645,1384)]` |
+  | day `[540,1020)`, no bookings | `[[540,1020)]` |
+  | day `[540,1020)`, booked `[540,1020)` | `[]` |
+  | day `[540,1020)`, booking `[900,2000)` runs past close | `[[540,900)]` |
+  | day `[100,100)` degenerate, no bookings | `[]`, no exception |
+  | day `[540,1020)`, booking `[0,100)` entirely outside | `[[540,1020)]` |
+
+- Coverage after the fix: still 100% instruction, branch and line — see below, this is the
+  point of Milestone 3.
+
+**Show the TA:** the Actions tab with the red run (commit `1cdae05`) beside the green run
+(commit `0e22d41`), plus the one-sentence summary above.
+
+## Milestone 3 — the audit
+
+Written up in full in `README.md` under "Milestone 3: auditing the generated suite". In
+brief, the three weaknesses in `AvailabilityCalculatorTest`:
+
+1. **Controllability** — every value-checking test ends its last booking exactly at
+   `DAY_END` (1020), so no trailing gap ever exists to be dropped. The exposing input
+   shape is never driven. All six tests also share one hardcoded day.
+2. **Controllability** — no test passes an empty booking list. A completely free day came
+   back as `[]`, the most trivially wrong output possible, and nothing asked.
+3. **Observability** — `returnedSlotsNeverOverlapABooking` *does* drive the exposing input
+   (booking `[600,660)`, tail `[660,1020)` dropped) but asserts only non-overlap **over the
+   returned slots**, so it cannot see a slot that is missing. It is vacuous on an empty
+   list: `return List.of();` passes it on every input.
+
+**Why 100% coverage did not save it:** the defect was a *missing* statement, not a wrong
+one. There was no `if (cursor < dayEnd)` block to leave uncovered, so the omission was
+invisible to every counter JaCoCo reports. The fix added 11 instructions, 2 branches and 2
+lines, and the report read 100% before and after — identical score, opposite correctness.
+Weakness 3 is the other half of the lesson: buggy code executing at full coverage credit
+under an assertion structurally incapable of failing.
+
+**Show the TA:** the README section, and the before/after coverage numbers.
 
 ## Tools and models
 
